@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "Zenith Facebook 300 Cleaner",
+  "version": "1.0.0",
+  "description": "300-Item Batch Triage & Stealth Unfriend, Leave Groups & Unlike for Facebook",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": ["*://*.facebook.com/*"],
+  "content_scripts": [
+    {
+      "matches": ["*://*.facebook.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "Launch Zenith 300 Cleaner"
+  },
+  "background": {
+    "service_worker": "background.js"
+  }
+}

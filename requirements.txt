@@ -1,0 +1,6 @@
+fastapi>=0.110
+uvicorn>=0.27
+pydantic>=2.6
+playwright>=1.42
+pillow>=10.0
+pywin32>=306 ; sys_platform == "win32"

@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Facebook Zenith Cleaner — 500-Item Triage & Stealth Purge Suite</title>
+  <meta name="description" content="AI-Powered Ultra-Safe Facebook Friends, Groups, and Pages unfriend & leave suite with 500-item pagination, multi-lingual Urdu/English support, and stealth pacing.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="glow-bg"></div>
+  <div id="toast-host" class="toast-host"></div>
+
+  <!-- Main Container -->
+  <div class="app-container">
+    
+    <!-- Top Header -->
+    <header class="app-header">
+      <div class="logo-group">
+        <div class="logo-icon">
+          <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z" fill="#1877f2" stroke="none"/>
+            <circle cx="19" cy="5" r="3" fill="#00f2fe" opacity="0.8"/>
+          </svg>
+        </div>
+        <div>
+          <h1 class="app-title">Facebook Zenith <span class="gradient-text">Cleaner</span></h1>
+          <p class="app-subtitle">Ultra-Safe Stealth Triage • Unfriend, Leave Groups & Unfollow Pages (Bilingual EN/UR Support)</p>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <div id="auth-status-badge" class="status-pill status-connected">
+          <span class="status-dot"></span>
+          <span id="auth-status-text">Checking Session...</span>
+        </div>
+
+        <button id="btn-open-browser" class="btn btn-secondary">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/>
+          </svg>
+          Open Browser
+        </button>
+
+        <button id="btn-close-browser" class="btn btn-secondary hidden" title="Close the automation browser window">
+          Close Browser
+        </button>
+
+        <button id="btn-scan-category" class="btn btn-primary" style="background: linear-gradient(135deg, #0ea5e9, #0284c7);">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+          </svg>
+          <span id="scan-category-label">Scan Friends Only</span>
+        </button>
+
+        <button id="btn-scan-all" class="btn btn-secondary" style="border: 1px solid rgba(0,242,254,0.3);">
+          <span id="scan-all-label">Scan All</span>
+        </button>
+
+        <button id="btn-open-import" class="btn btn-secondary" style="background: rgba(16,185,129,0.12); border-color: rgba(16,185,129,0.35); color: #34d399;" title="Import Scanned Data JSON">
+          📥 Import Data
+        </button>
+
+        <button id="btn-export-csv" class="btn btn-secondary" style="background: rgba(56,189,248,0.12); border-color: rgba(56,189,248,0.35); color: #38bdf8;" title="Export CSV Spreadsheet">
+          📊 Export CSV
+        </button>
+      </div>
+    </header>
+
+    <!-- Error Banner -->
+    <div id="error-banner" class="error-banner hidden">
+      <div class="error-banner-body">
+        <span class="error-banner-icon">!</span>
+        <span id="error-banner-text"></span>
+      </div>
+      <button id="btn-dismiss-error" class="btn btn-sm btn-outline">Dismiss</button>
+    </div>
+
+    <!-- Scanning & Login Action Banner -->
+    <div id="scan-active-banner" class="scan-banner hidden">
+      <div class="scan-banner-content">
+        <div class="spinner-neon-sm"></div>
+        <div>
+          <div id="scan-banner-title" class="scan-banner-title">Scanning in Progress...</div>
+          <div id="scan-banner-desc" class="scan-banner-desc">If a browser window opened, please log into Facebook if prompted.</div>
+        </div>
+      </div>
+      <button id="btn-stop-scan-dashboard" class="btn btn-sm btn-danger">⏹️ Cancel Scan</button>
+    </div>
+
+    <!-- Resume banner: shown when an interrupted purge is parked on disk -->
+    <div id="resume-banner" class="scan-banner hidden" style="border-color:#f0b429;background:rgba(240,180,41,.08)">
+      <div class="scan-banner-content">
+        <div style="font-size:22px">⏸️</div>
+        <div>
+          <div class="scan-banner-title">Interrupted purge saved</div>
+          <div id="resume-banner-desc" class="scan-banner-desc">A previous removal run was cut off. Continue from where it left off.</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button id="btn-resume-purge" class="btn btn-sm btn-category-purge">▶️ Resume Purge</button>
+        <button id="btn-discard-purge" class="btn btn-sm btn-outline" title="Cancel the parked removal queue (removes nothing from Facebook)">✕ Discard</button>
+      </div>
+    </div>
+
+    <!-- Metrics Summary Bar -->
+    <section class="metrics-grid">
+      <div class="metric-card glass-panel">
+        <div class="metric-icon icon-friends">👥</div>
+        <div class="metric-data">
+          <div class="metric-header-row">
+            <span class="metric-label">Total Friends</span>
+            <span class="metric-sub"><strong id="count-friends-selected">0</strong> to unfriend</span>
+          </div>
+          <h2 id="count-friends" class="metric-val">0</h2>
+          <div class="metric-actions">
+            <button class="metric-btn metric-btn-scan" data-cat="friends">⟳ Scan Friends</button>
+            <button class="metric-btn metric-btn-del" data-cat="friends">🗑 Delete Checked</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="metric-card glass-panel">
+        <div class="metric-icon icon-groups">👥</div>
+        <div class="metric-data">
+          <div class="metric-header-row">
+            <span class="metric-label">Joined Groups</span>
+            <span class="metric-sub"><strong id="count-groups-selected">0</strong> to leave</span>
+          </div>
+          <h2 id="count-groups" class="metric-val">0</h2>
+          <div class="metric-actions">
+            <button class="metric-btn metric-btn-scan" data-cat="groups">⟳ Scan Groups</button>
+            <button class="metric-btn metric-btn-del" data-cat="groups">🗑 Delete Checked</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="metric-card glass-panel">
+        <div class="metric-icon icon-pages">📄</div>
+        <div class="metric-data">
+          <div class="metric-header-row">
+            <span class="metric-label">Followed Pages</span>
+            <span class="metric-sub"><strong id="count-pages-selected">0</strong> to unfollow</span>
+          </div>
+          <h2 id="count-pages" class="metric-val">0</h2>
+          <div class="metric-actions">
+            <button class="metric-btn metric-btn-scan" data-cat="pages">⟳ Scan Pages</button>
+            <button class="metric-btn metric-btn-del" data-cat="pages">🗑 Delete Checked</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="metric-card glass-panel metric-highlight">
+        <div class="metric-icon icon-slated">⚡</div>
+        <div class="metric-data">
+          <div class="metric-header-row">
+            <span class="metric-label">Total Slated</span>
+            <span class="metric-sub metric-sub-kept"><strong id="count-kept">0</strong> to keep</span>
+          </div>
+          <h2 id="count-selected" class="metric-val text-neon-cyan">0</h2>
+        </div>
+      </div>
+    </section>
+
+    <!-- Triage & Checklist Main Card -->
+    <main class="main-card glass-panel">
+      
+      <!-- Toolbar & Search -->
+      <div class="card-toolbar">
+        <div class="tabs-container">
+          <button class="tab-btn active" data-tab="friends">
+            <span>👥 Friends</span>
+            <span id="badge-friends" class="tab-badge">0</span>
+          </button>
+          <button class="tab-btn" data-tab="groups">
+            <span>👥 Groups</span>
+            <span id="badge-groups" class="tab-badge">0</span>
+          </button>
+          <button class="tab-btn" data-tab="pages">
+            <span>📄 Pages</span>
+            <span id="badge-pages" class="tab-badge">0</span>
+          </button>
+          <button class="tab-btn" data-tab="markdown">
+            <span>📋 Markdown Checklist</span>
+          </button>
+        </div>
+
+        <div class="search-box">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/>
+            <path d="M21 21l-4.35-4.35"/>
+          </svg>
+          <input type="text" id="search-input" placeholder="Search by name or link...">
+        </div>
+      </div>
+
+      <!-- Batch & Category Purge Toolbar -->
+      <div class="batch-controls">
+        <div class="selection-info">
+          <span id="tab-selection-summary">Showing 0 items (0 selected to remove)</span>
+        </div>
+        <div class="control-actions">
+          <button id="btn-select-page" class="btn btn-sm btn-outline">Select Page (<span class="page-size-label">300</span>)</button>
+          <button id="btn-deselect-page" class="btn btn-sm btn-outline">Uncheck Page (Keep)</button>
+          <button id="btn-invert-page" class="btn btn-sm btn-outline">Invert Page</button>
+          <button id="btn-select-all" class="btn btn-sm btn-outline">Select All in Tab</button>
+          <button id="btn-deselect-all" class="btn btn-sm btn-outline">Keep All in Tab</button>
+          <button id="btn-category-purge" class="btn btn-sm btn-category-purge">
+            <span>⚡ Purge Checked in Tab</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Pagination Bar -->
+      <div class="pagination-bar" id="pagination-bar">
+        <div class="pagination-info">
+          <span id="pagination-summary">Showing 0–0 of 0</span>
+        </div>
+        <div class="pagination-controls">
+          <button id="btn-first-page" class="btn-page" title="First Page">&laquo;</button>
+          <button id="btn-prev-page" class="btn-page">&lsaquo; Prev <span class="page-size-label">300</span></button>
+          <span class="page-indicator" id="page-indicator">Page 1 of 1</span>
+          <button id="btn-next-page" class="btn-page">Next <span class="page-size-label">300</span> &rsaquo;</button>
+          <button id="btn-last-page" class="btn-page" title="Last Page">&raquo;</button>
+        </div>
+        <div class="pagination-size">
+          <label for="page-size-select">Per page:</label>
+          <select id="page-size-select" class="page-select">
+            <option value="300" selected>300 items</option>
+            <option value="100">100 items</option>
+            <option value="50">50 items</option>
+            <option value="100000">All</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Tab Content Panels -->
+      <div class="tab-contents">
+        
+        <!-- Friends Panel -->
+        <div id="panel-friends" class="tab-panel active">
+          <div id="list-friends" class="items-grid">
+            <div class="empty-state">
+              <div class="empty-icon">👥</div>
+              <h3>No Friends Loaded Yet</h3>
+              <p>Click <strong>"Open Facebook Browser"</strong> to verify login, then click <strong>"Scan Friends Only"</strong> or <strong>"Scan All Categories"</strong>.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Groups Panel -->
+        <div id="panel-groups" class="tab-panel">
+          <div id="list-groups" class="items-grid">
+            <div class="empty-state">
+              <div class="empty-icon">👥</div>
+              <h3>No Groups Loaded Yet</h3>
+              <p>Run a scan to extract all your joined Facebook groups.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Pages Panel -->
+        <div id="panel-pages" class="tab-panel">
+          <div id="list-pages" class="items-grid">
+            <div class="empty-state">
+              <div class="empty-icon">📄</div>
+              <h3>No Pages Loaded Yet</h3>
+              <p>Run a scan to discover all your liked and followed pages.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Markdown View Panel -->
+        <div id="panel-markdown" class="tab-panel">
+          <div class="markdown-container">
+            <div class="markdown-header">
+              <h3>Exportable Markdown Checklist</h3>
+              <button id="btn-copy-markdown" class="btn btn-sm btn-secondary">Copy to Clipboard</button>
+            </div>
+            <textarea id="markdown-viewer" class="markdown-textarea" readonly></textarea>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Bottom Pagination Bar -->
+      <div class="pagination-bar pagination-bottom" id="pagination-bar-bottom">
+        <div class="pagination-info">
+          <span id="pagination-summary-bottom">Showing 0–0 of 0</span>
+        </div>
+        <div class="pagination-controls">
+          <button id="btn-first-page-b" class="btn-page">&laquo;</button>
+          <button id="btn-prev-page-b" class="btn-page">&lsaquo; Prev <span class="page-size-label">300</span></button>
+          <span class="page-indicator" id="page-indicator-bottom">Page 1 of 1</span>
+          <button id="btn-next-page-b" class="btn-page">Next <span class="page-size-label">300</span> &rsaquo;</button>
+          <button id="btn-last-page-b" class="btn-page">&raquo;</button>
+        </div>
+      </div>
+
+    </main>
+
+    <!-- Sticky Floating Action Footer -->
+    <footer class="action-footer glass-panel">
+      <div class="footer-summary">
+        <div class="footer-pulse"></div>
+        <div>
+          <span class="footer-count"><strong id="footer-remove-count">0</strong> Items Slated for Removal</span>
+          <span class="footer-sub">Mode: <strong>Ultra-Safe Stealth</strong> (5–9s randomized delay & anti-ban protection)</span>
+        </div>
+      </div>
+
+      <div class="footer-buttons">
+        <button id="btn-purge-tab-footer" class="btn btn-secondary">
+          <span id="footer-tab-purge-label">Purge Checked Friends</span>
+        </button>
+        <button id="btn-trigger-purge" class="btn btn-purge">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6"/>
+          </svg>
+          <span>Execute Ultra-Safe Purge (All Tabs)</span>
+        </button>
+      </div>
+    </footer>
+
+  </div>
+
+  <!-- Live Execution Modal -->
+  <div id="purge-modal" class="modal-overlay hidden">
+    <div class="modal-card glass-panel">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <div class="spinner-neon"></div>
+          <div>
+            <h2 id="modal-heading">Ultra-Safe Purge in Progress</h2>
+            <p id="modal-sub-status">Human-paced removal (5–9s per item) with anti-ban cooling breaks.</p>
+          </div>
+        </div>
+        <button id="btn-stop-purge" class="btn btn-danger">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="6" y="6" width="12" height="12"/>
+          </svg>
+          Emergency Stop / Pause
+        </button>
+      </div>
+
+      <!-- Progress Bar & Stats -->
+      <div class="modal-progress-section">
+        <div class="progress-info">
+          <span id="modal-progress-label">Item 0 of 0</span>
+          <span id="modal-percentage">0%</span>
+        </div>
+        <div class="progress-bar-track">
+          <div id="modal-progress-fill" class="progress-bar-fill" style="width: 0%;"></div>
+        </div>
+        
+        <div class="progress-badges">
+          <span class="badge badge-success">Cleaned: <strong id="modal-success-count">0</strong></span>
+          <span class="badge badge-error">Failed: <strong id="modal-fail-count">0</strong></span>
+          <span class="badge badge-info">Elapsed: <strong id="modal-elapsed-time">0s</strong></span>
+        </div>
+      </div>
+
+      <!-- Currently Active Item Banner -->
+      <div class="active-item-banner">
+        <div class="banner-label">CURRENTLY PROCESSING:</div>
+        <div id="modal-current-item" class="banner-value">Initializing removal queue...</div>
+      </div>
+
+      <!-- Real-Time Event Log Terminal -->
+      <div class="terminal-log-container">
+        <div class="terminal-header">
+          <span>Execution Log Stream</span>
+          <span class="live-dot">LIVE</span>
+        </div>
+        <div id="modal-log-terminal" class="terminal-body">
+          <div class="log-entry log-info">[00:00:00] Waiting for engine initialization...</div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button id="btn-close-modal" class="btn btn-secondary hidden">Close Dashboard</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Data Import Modal -->
+  <div id="import-modal" class="modal-overlay hidden">
+    <div class="modal-card glass-panel" style="max-width: 650px;">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <div style="font-size: 26px;">📥</div>
+          <div>
+            <h2>Import Scanned Data JSON</h2>
+            <p>Paste JSON exported from the in-tab collector or drag & drop a file.</p>
+          </div>
+        </div>
+        <button id="btn-close-import" class="btn btn-secondary btn-sm">&times;</button>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <textarea id="import-textarea" class="markdown-textarea" style="height: 200px;" placeholder="Paste JSON here (e.g. { 'friends': [...] })"></textarea>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <input type="file" id="import-file-input" accept=".json" style="display: none;" />
+          <button id="btn-browse-file" class="btn btn-sm btn-outline">📁 Choose File</button>
+          <span id="import-status-text" style="font-size: 12px; color: var(--text-muted);">Ready to import</span>
+          <button id="btn-submit-import" class="btn btn-primary btn-sm">Load Into Dashboard</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
