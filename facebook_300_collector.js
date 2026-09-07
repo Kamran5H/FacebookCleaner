@@ -221,8 +221,7 @@
     if (!name) return false;
     const norm = normalizeUnicode(name);
     const urlNorm = normalizeUnicode(url);
-    // Never touch your own account: add your name / profile-handle stems here.
-    const protectedStems = ['your_name', 'your_username'];
+    const protectedStems = ['kamran', 'ashraf', 'chkamran', 'chkamran32b'];
     return protectedStems.some(stem => norm.includes(stem) || urlNorm.includes(stem));
   }
 

@@ -417,6 +417,26 @@ def discard_purge_queue():
     return fb_engine.discard_queue()
 
 
+@app.get("/api/diag/friends")
+def diag_friends():
+    """Read-only diagnostic: compares the live friends list vs the cached scan."""
+    return fb_engine.diagnose_friends()
+
+
+@app.post("/api/reset")
+def reset_everything(payload: Optional[Dict[str, Any]] = None):
+    """Wipe all scanned data, selections, queue and history back to zero.
+
+    Destructive, so it demands an explicit {"confirm": true} in the body -- a
+    stray GET, a probe, or an accidental curl can never wipe the dashboard.
+    """
+    payload = payload or {}
+    if payload.get("confirm") is not True and payload.get("confirm") != "RESET":
+        return {"success": False, "message": "Reset requires explicit confirmation."}
+    wipe_history = bool(payload.get("wipe_history", True))
+    return fb_engine.reset_all(wipe_history=wipe_history)
+
+
 @app.post("/api/purge/resume")
 def resume_purge():
     """Finish a purge that was interrupted by a crash, power loss, or closed browser."""

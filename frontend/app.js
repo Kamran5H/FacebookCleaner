@@ -27,6 +27,7 @@ const state = {
   progressTimer: null,
   searchTimer: null,
   dirty: true,
+  purgeMinimized: false,   // user chose to keep purging in the background
 };
 
 const $ = (id) => document.getElementById(id);
@@ -42,6 +43,7 @@ const el = {
   scanAllLabel: $('scan-all-label'),
   btnExportCsv: $('btn-export-csv'),
   btnOpenImport: $('btn-open-import'),
+  btnResetAll: $('btn-reset-all'),
 
   errorBanner: $('error-banner'),
   errorText: $('error-banner-text'),
@@ -101,7 +103,10 @@ const el = {
   modalHeading: $('modal-heading'),
   modalSubStatus: $('modal-sub-status'),
   btnStopPurge: $('btn-stop-purge'),
+  btnMinimizePurge: $('btn-minimize-purge'),
   btnCloseModal: $('btn-close-modal'),
+  purgePill: $('purge-pill'),
+  purgePillText: $('purge-pill-text'),
   modalProgressLabel: $('modal-progress-label'),
   modalPercentage: $('modal-percentage'),
   modalProgressFill: $('modal-progress-fill'),
@@ -273,6 +278,9 @@ function bindEvents() {
   if (el.btnTriggerPurge) el.btnTriggerPurge.addEventListener('click', purgeEverything);
   if (el.btnStopPurge) el.btnStopPurge.addEventListener('click', stopPurge);
   if (el.btnCloseModal) el.btnCloseModal.addEventListener('click', () => el.purgeModal.classList.add('hidden'));
+  if (el.btnMinimizePurge) el.btnMinimizePurge.addEventListener('click', minimizePurge);
+  if (el.purgePill) el.purgePill.addEventListener('click', restorePurgeModal);
+  if (el.btnResetAll) el.btnResetAll.addEventListener('click', resetEverything);
 
   if (el.btnExportCsv) el.btnExportCsv.addEventListener('click', exportCsv);
   if (el.btnCopyMarkdown) el.btnCopyMarkdown.addEventListener('click', copyMarkdown);
@@ -466,13 +474,13 @@ async function refreshAuth() {
   }
 }
 
-async function refreshData() {
+async function refreshData(resetScroll = true) {
   try {
     const data = await api('/api/data');
     state.friends = data.friends || [];
     state.groups = data.groups || [];
     state.pages = data.pages || [];
-    render(true);
+    render(resetScroll);
   } catch (e) {
     showError(`Could not load data: ${e.message}`);
   }
@@ -545,6 +553,7 @@ async function pollStatus() {
     if (b) b.disabled = busy;
   });
   if (el.btnResumePurge) el.btnResumePurge.disabled = busy;
+  if (el.btnResetAll) el.btnResetAll.disabled = busy;   // reset only when idle
 
   // Interrupted-purge resume banner (only when idle).
   const resumable = data.resumablePurge || {};
@@ -562,7 +571,9 @@ async function pollStatus() {
   const key = JSON.stringify(data.counts) + '|' + (data.lastScanTime || '');
   if (key !== lastCountsKey) {
     lastCountsKey = key;
-    await refreshData();
+    // Preserve scroll while removals stream in during a purge, so triaging in the
+    // background isn't yanked to the top every time an item disappears.
+    await refreshData(!data.isPurging);
   }
 
   if (wasScanning && !data.isScanning) {
@@ -573,9 +584,79 @@ async function pollStatus() {
   wasScanning = data.isScanning;
 
   if (data.isPurging) {
-    el.purgeModal.classList.remove('hidden');
     updatePurgeModal(data.purgeProgress);
     if (!state.progressTimer) startProgressPolling();
+    if (state.purgeMinimized) {
+      el.purgeModal.classList.add('hidden');
+      showPurgePill(data.purgeProgress);
+    } else {
+      el.purgeModal.classList.remove('hidden');
+      hidePurgePill();
+    }
+  } else {
+    hidePurgePill();
+    state.purgeMinimized = false;   // fresh state for the next purge
+  }
+}
+
+// --- purge minimize / restore (dashboard stays usable during removal) ------
+
+function minimizePurge() {
+  state.purgeMinimized = true;
+  el.purgeModal.classList.add('hidden');
+  toast('Purge running in the background. Click the pill (bottom-right) to reopen.', 'info', 5000);
+}
+
+function restorePurgeModal() {
+  state.purgeMinimized = false;
+  el.purgeModal.classList.remove('hidden');
+  hidePurgePill();
+}
+
+function showPurgePill(p) {
+  if (!el.purgePill) return;
+  const done = (p && p.processed_items) || 0;
+  const total = (p && p.total_items) || 0;
+  let label = `⚡ Purging ${done}/${total}`;
+  el.purgePill.classList.remove('is-paused', 'is-blocked');
+  if (p && p.blocked) { label = `⛔ Blocked ${done}/${total} — click`; el.purgePill.classList.add('is-blocked'); }
+  else if (p && p.paused) { label = `⏸️ Paused ${done}/${total} — click`; el.purgePill.classList.add('is-paused'); }
+  if (el.purgePillText) el.purgePillText.textContent = label;
+  el.purgePill.classList.remove('hidden');
+}
+
+function hidePurgePill() {
+  if (el.purgePill) el.purgePill.classList.add('hidden');
+}
+
+async function resetEverything() {
+  if (state.isScanning || state.isPurging) {
+    toast('Stop the running scan or purge before resetting.', 'warning');
+    return;
+  }
+  if (!confirm(
+    'Reset EVERYTHING to zero?\n\n' +
+    'This wipes all scanned friends, groups and pages, every selection, the ' +
+    'parked queue, and the removal history.\n\n' +
+    'It does NOT log you out of Facebook, and removes nothing from your account.\n\n' +
+    'This cannot be undone.'
+  )) return;
+  el.btnResetAll.disabled = true;
+  try {
+    const res = await post('/api/reset', { confirm: true });
+    if (res.success) {
+      lastCountsKey = '';
+      await refreshData();
+      await refreshAuth();
+      showError('');
+      toast('Everything wiped. Starting from zero.', 'success');
+    } else {
+      toast(res.message || 'Could not reset.', 'warning');
+    }
+  } catch (e) {
+    showError(e.message);
+  } finally {
+    el.btnResetAll.disabled = false;
   }
 }
 
@@ -933,6 +1014,8 @@ function purgeEverything() {
 }
 
 async function runPurge(payload) {
+  state.purgeMinimized = false;
+  hidePurgePill();
   el.purgeModal.classList.remove('hidden');
   el.btnCloseModal.classList.add('hidden');
   el.btnStopPurge.disabled = false;
@@ -968,6 +1051,8 @@ async function discardPurge() {
 
 async function resumePurge() {
   el.btnResumePurge.disabled = true;
+  state.purgeMinimized = false;
+  hidePurgePill();
   el.modalHeading.textContent = 'Resuming interrupted purge';
   el.purgeModal.classList.remove('hidden');
   el.btnCloseModal.classList.add('hidden');

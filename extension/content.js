@@ -590,9 +590,7 @@
     const name = it.name || '';
     const url = it.url || '';
 
-    // Never remove your own account: set your name / profile-handle stems here.
-    const PROTECTED_STEMS = ['your_name', 'your_username'];
-    if (PROTECTED_STEMS.some(s => name.toLowerCase().includes(s) || url.includes(s))) {
+    if (name.toLowerCase().includes('kamran') || url.includes('chkamran32b')) {
       return true;
     }
 

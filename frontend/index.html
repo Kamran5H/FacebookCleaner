@@ -68,6 +68,10 @@
         <button id="btn-export-csv" class="btn btn-secondary" style="background: rgba(56,189,248,0.12); border-color: rgba(56,189,248,0.35); color: #38bdf8;" title="Export CSV Spreadsheet">
           📊 Export CSV
         </button>
+
+        <button id="btn-reset-all" class="btn btn-secondary" style="background: rgba(244,63,94,0.12); border-color: rgba(244,63,94,0.35); color: #fb7185;" title="Wipe all scanned data, selections, queue and history — start from zero">
+          ♻️ Reset
+        </button>
       </div>
     </header>
 
@@ -328,6 +332,13 @@
 
   </div>
 
+  <!-- Floating status pill: shown when the purge is minimized so the dashboard
+       stays usable while removal continues in the background. -->
+  <button id="purge-pill" class="purge-pill hidden" title="Click to reopen the live purge view">
+    <span class="purge-pill-dot"></span>
+    <span id="purge-pill-text">Purging…</span>
+  </button>
+
   <!-- Live Execution Modal -->
   <div id="purge-modal" class="modal-overlay hidden">
     <div class="modal-card glass-panel">
@@ -339,12 +350,17 @@
             <p id="modal-sub-status">Human-paced removal (5–9s per item) with anti-ban cooling breaks.</p>
           </div>
         </div>
-        <button id="btn-stop-purge" class="btn btn-danger">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="6" y="6" width="12" height="12"/>
-          </svg>
-          Emergency Stop / Pause
-        </button>
+        <div style="display:flex;gap:10px;align-items:center">
+          <button id="btn-minimize-purge" class="btn btn-secondary" title="Keep purging in the background and go back to the dashboard">
+            ← Back to Dashboard
+          </button>
+          <button id="btn-stop-purge" class="btn btn-danger">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="6" y="6" width="12" height="12"/>
+            </svg>
+            Emergency Stop / Pause
+          </button>
+        </div>
       </div>
 
       <!-- Progress Bar & Stats -->

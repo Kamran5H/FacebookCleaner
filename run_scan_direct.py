@@ -17,8 +17,7 @@ SESSION_DIR = Path(os.environ.get("LOCALAPPDATA", tempfile.gettempdir())) / "FBC
 SESSION_DIR.mkdir(parents=True, exist_ok=True)
 CACHE_FILE = BASE_DIR / "scanned_data.json"
 
-# Never touch your own account: add your name / profile-handle stems here.
-PROTECTED_STEMS = {"your_name", "your_username"}
+PROTECTED_STEMS = {"kamran", "ashraf", "chkamran", "chkamran32b"}
 
 def normalize_text(text: str) -> str:
     if not text:

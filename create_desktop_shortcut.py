@@ -16,7 +16,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 TARGET_VBS = BASE_DIR / "launch.vbs"
 ICON_PATH = BASE_DIR / "fb_cleaner.ico"
-SHORTCUT_NAME = "Facebook Zenith Cleaner.lnk"
+SHORTCUT_NAME = "Facebook Zenith Cleaner - Kamran Ashraf.lnk"
 
 
 def desktop_dirs() -> list[Path]:

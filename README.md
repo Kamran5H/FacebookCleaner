@@ -44,6 +44,10 @@ Scanning is event-driven: each scroll returns the moment new content actually re
 - **Facebook throws a security checkpoint / "temporarily blocked" wall** → the purge stops *immediately* instead of hammering the block (which would only deepen it), parks the rest, and tells you to clear the check in the browser and then Resume. This protects the account.
 - Stopping manually also parks the remainder, so you can Resume later.
 
+**"Content isn't available" profiles = profile-view throttling.** If removals start failing because friend profiles show *"This content isn't available"* — while your own profile, public pages, and the friends list still load fine — Facebook has **rate-limited your automation session from viewing friend profiles**. This is caused by the removal engine opening one profile after another too quickly. It is session-specific: your normal browser is unaffected, which is why the same friends look fine there.
+
+The app detects this wall, logs it, and **pauses after 5 in a row** ("content unavailable") with instructions to stop. **The fix is time:** stop the automation browser for several hours (ideally a day) and the limit lifts; verify by opening a friend's profile in the automation window — when it loads again, Resume. To avoid it, remove in **smaller batches** with long gaps. (These friends are real and still in your list — the app never deletes them locally just because a profile won't load.)
+
 Every removal is **verified against the page** before it counts — unfriend needs "Add friend" back, leave needs "Join" back, unfollow needs the follow/like state cleared. Anything that can't be confirmed is retried once (each attempt re-navigates and re-checks, so it's safe) and otherwise reported as a failure rather than a false success.
 
 Stop is available at any time and takes effect within about a second, including during a cooling break or a pause.
@@ -53,6 +57,8 @@ Stop is available at any time and takes effect within about a second, including 
 ## Dashboard
 
 - **Per-category control** — each of the Friends, Groups, and Pages cards has its own **Scan** and **Delete Checked** button, so you scan and remove one category at a time without touching the others. The Delete button shows the exact checked count and disables itself when nothing is selected. (Scan All and Purge-everything remain for when you do want the lot.)
+- **Work during a purge** — the removal window has a **← Back to Dashboard** button. Minimize it and the purge keeps running in the background (a floating pill, bottom-right, shows live progress and turns amber/red if it pauses or hits a block — click it to reopen). Meanwhile the dashboard stays fully usable: search, switch tabs, uncheck people to keep, and plan the next batch. Removed items disappear from the list and every count in real time, without yanking your scroll position.
+- **Reset** — the header **♻️ Reset** wipes everything back to zero: all scanned friends/groups/pages, every selection, the parked queue, and the removal history. It does **not** log you out of Facebook and removes nothing from your account — it just clears the app's local data so you can start a fresh scan. (Disabled while a scan or purge is running.)
 - **Tabs** per category, plus a Markdown checklist view
 - **Search** by name or link
 - **Pagination** at 50 / 100 / 300 / All per page

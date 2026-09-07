@@ -384,6 +384,43 @@ body {
   color: var(--neon-cyan);
 }
 
+/* Floating purge status pill (dashboard-usable-during-purge) */
+.purge-pill {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(0, 242, 254, 0.4);
+  background: linear-gradient(135deg, rgba(14, 22, 40, 0.96), rgba(20, 30, 55, 0.96));
+  color: #e8f0ff;
+  font-family: var(--font-body, inherit);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.5), 0 0 22px rgba(0, 242, 254, 0.18);
+  backdrop-filter: blur(8px);
+  transition: transform 0.15s, box-shadow 0.2s;
+}
+.purge-pill:hover { transform: translateY(-2px); box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55), 0 0 30px rgba(0, 242, 254, 0.3); }
+.purge-pill-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: #22e3a3; flex-shrink: 0;
+  box-shadow: 0 0 0 0 rgba(34, 227, 163, 0.6);
+  animation: purge-pill-pulse 1.6s infinite;
+}
+.purge-pill.is-paused .purge-pill-dot { background: #f0b429; animation: none; }
+.purge-pill.is-blocked .purge-pill-dot { background: #fb7185; animation: none; }
+@keyframes purge-pill-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(34, 227, 163, 0.55); }
+  70%  { box-shadow: 0 0 0 9px rgba(34, 227, 163, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(34, 227, 163, 0); }
+}
+
 /* Per-category action buttons on each metric card */
 .metric-actions {
   display: flex;

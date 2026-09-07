@@ -130,6 +130,9 @@ T = {
     "like": ["Like", "پسند کریں"],
     "unlike": ["Unlike", "ان لائک کریں", "ناپسند کریں"],
     "more": ["More", "See options", "Options", "مزید", "اختیارات"],
+    # Newer "Follow settings" dialog: selecting the Unfollow radio does nothing
+    # until this button commits the change.
+    "update": ["Update", "Save", "Done", "اپ ڈیٹ", "محفوظ کریں", "ہو گیا"],
 }
 
 
@@ -256,6 +259,7 @@ class BrowserSession:
         self._start_error: Optional[str] = None
         self._start_lock = threading.Lock()
         self._shutdown = False
+        self._driver_dead = False
         self.browser_kind = "chromium"
         self.last_error: Optional[str] = None
 
@@ -533,6 +537,21 @@ class BrowserSession:
                         job.error = e
                         self.last_error = f"{type(e).__name__}: {e}"
                         logger.error(f"Browser job '{job.name}' failed: {e}")
+                        # A crashed/disconnected Playwright driver reports itself
+                        # here. Keeping the loop alive would just hang every later
+                        # job (its timeout is enforced by the dead driver), so end
+                        # the session and let the next start() relaunch a clean one.
+                        _m = str(e).lower()
+                        if any(s in _m for s in (
+                            "connection closed", "target closed", "target page, context",
+                            "browser has been closed", "browser gone", "has been closed",
+                            "frame has been detached", "driver", "websocket",
+                        )):
+                            self._driver_dead = True
+                            logger.error("Browser driver looks dead -- ending session for a clean relaunch.")
+                            job.event.set()
+                            break
+
                     finally:
                         job.event.set()
 
@@ -562,12 +581,36 @@ class BrowserSession:
                     j.error = SessionError("Browser session ended.")
                     j.event.set()
 
-    def stop(self):
+    def stop(self, force: bool = True):
+        """
+        Tear the session down. A crashed Playwright driver can leave the worker
+        thread hung inside a page.* call (its timeout is enforced by the dead
+        driver, so it never fires). A polite join would wait forever, so we also
+        KILL the browser process -- that unblocks the hung call and lets the
+        thread die, and clears a crashed driver so the next start() is clean.
+        """
+        self._shutdown = True
         if self._thread and self._thread.is_alive():
-            self._shutdown = True
             self._jobs.put(None)
-            self._thread.join(timeout=15)
+            self._thread.join(timeout=6)
+
+        if force:
+            self._kill_profile_owners()   # unblocks any hung page.* call
+            self._clear_stale_locks()
+
+        if self._thread and self._thread.is_alive():
+            self._thread.join(timeout=5)
+        # Fail anything still queued so callers stop waiting on a dead session.
+        while True:
+            try:
+                j = self._jobs.get_nowait()
+            except queue.Empty:
+                break
+            if j is not None:
+                j.error = SessionError("Browser session was stopped.")
+                j.event.set()
         self._ready.clear()
+        self._stopped.set()
         self._thread = None
 
     # -- job submission ----------------------------------------------------
@@ -708,6 +751,33 @@ _BLOCK_TEXT_MARKERS = (
     "you can't use this feature", "you’re unable to use this feature",
     "آپ عارضی طور پر بلاک",
 )
+
+
+# A profile/group/page that won't load its real content. Happens when the person
+# deactivated or deleted their account, OR when Facebook is throttling you after
+# too many rapid visits. Same screen for both -- the purge loop tells them apart
+# by whether it shows up in a long consecutive run (throttle) or in isolation.
+_UNAVAILABLE_MARKERS = (
+    "this content isn't available",
+    "this content isnt available",
+    "content isn't available at the moment",
+    "this page isn't available",
+    "this page isnt available",
+    "content not found",
+    "یہ مواد اس وقت دستیاب نہیں",
+    "یہ صفحہ دستیاب نہیں",
+)
+
+
+def _profile_unavailable(page) -> bool:
+    """True if the page is Facebook's 'content isn't available' wall."""
+    try:
+        body = (page.evaluate(
+            "() => (document.body && document.body.innerText || '').slice(0, 2500)"
+        ) or "").lower()
+    except Exception:
+        return False
+    return any(m in body for m in _UNAVAILABLE_MARKERS)
 
 
 def _detect_block(page) -> str:
@@ -922,6 +992,50 @@ def _click_dialog_button(page, texts: List[str], timeout: float = 8.0) -> bool:
             return True
         time.sleep(0.3)
     return False
+
+
+COMMIT_FOLLOW_SETTINGS_JS = r"""(labels) => {
+  const want = labels.map(l => String(l).trim().toLowerCase());
+  // Only look inside a real, on-screen dialog (the "Follow settings" modal).
+  const dialogs = Array.from(document.querySelectorAll('[role="dialog"]'))
+    .filter(d => { const r = d.getBoundingClientRect(); return r.width > 40 && r.height > 40; });
+  for (const d of dialogs) {
+    const clickables = d.querySelectorAll(
+      'div[role="button"], button, a[role="button"], [aria-label]');
+    for (const el of clickables) {
+      const r = el.getBoundingClientRect();
+      if (r.width < 8 || r.height < 8) continue;
+      const al = (el.getAttribute('aria-label') || '').trim().toLowerCase();
+      const tx = (el.innerText || el.textContent || '').trim().toLowerCase();
+      if (el.getAttribute('aria-disabled') === 'true') continue;
+      if (want.includes(al) || want.includes(tx)) {
+        el.scrollIntoView({block: 'center'});
+        el.click();
+        return (el.innerText || el.getAttribute('aria-label') || 'button').trim();
+      }
+    }
+  }
+  return null;
+}"""
+
+
+def _commit_follow_settings(page, labels: List[str], timeout: float = 4.0):
+    """
+    Clicks the 'Update' button in Facebook's newer 'Follow settings' dialog.
+    Returns the button text it clicked, or None if no such dialog/button exists
+    (older UI unfollows immediately and has none). JS click is used because
+    these synthetic buttons often reject Playwright's element-handle clicks.
+    """
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            clicked = page.evaluate(COMMIT_FOLLOW_SETTINGS_JS, labels)
+            if clicked:
+                return clicked
+        except Exception:
+            pass
+        time.sleep(0.3)
+    return None
 
 
 def _human_pause(a: float = 0.6, b: float = 1.3):
@@ -1344,6 +1458,20 @@ class FacebookEngine:
                 "message": f"Browser is busy running a {busy}.",
             }
 
+        # If the thread is jammed (e.g. a crashed driver left a hung navigation),
+        # do NOT pile another auth-check onto it -- that's how the queue grows to
+        # 8 and everything times out. Tell the user to restart the browser.
+        if session.queue_depth > 1:
+            return {
+                "authenticated": bool(self.owner_id),
+                "sessionOpen": True,
+                "userId": self.owner_id,
+                "userName": self.owner_name or "Active Session",
+                "userUrl": self.owner_url,
+                "stuck": True,
+                "message": "The browser is unresponsive. Click 'Close Browser', then 'Open Browser' to restart it.",
+            }
+
         def _job(page, ctx):
             uid = _cookie_user_id(ctx)
             if not uid:
@@ -1351,12 +1479,14 @@ class FacebookEngine:
             return self._resolve_owner(page, ctx)
 
         try:
-            res = session.submit(_job, "auth-check", timeout=60)
+            res = session.submit(_job, "auth-check", timeout=30)
         except Exception as e:
             self.last_error = str(e)
             return {
-                "authenticated": False, "sessionOpen": session.is_alive,
-                "userName": "Session Error", "message": str(e),
+                "authenticated": bool(self.owner_id), "sessionOpen": session.is_alive,
+                "userName": self.owner_name or "Session Error",
+                "stuck": True,
+                "message": "Browser stopped responding. Click 'Close Browser', then 'Open Browser'.",
             }
 
         if res.get("authenticated"):
@@ -1605,6 +1735,8 @@ class FacebookEngine:
         blocked = _detect_block(page)
         if blocked:
             raise BlockedError(blocked)
+        if _profile_unavailable(page):
+            return False, "unavailable: account deactivated/deleted, or Facebook throttling"
         _human_pause(1.6, 2.4)
 
         add_btn = _find_button(page, T["add_friend"])
@@ -1646,6 +1778,8 @@ class FacebookEngine:
         blocked = _detect_block(page)
         if blocked:
             raise BlockedError(blocked)
+        if _profile_unavailable(page):
+            return False, "unavailable: account deactivated/deleted, or Facebook throttling"
         _human_pause(1.8, 2.6)
 
         joined = _find_button(page, T["joined"], prefer_popup=True)
@@ -1687,6 +1821,8 @@ class FacebookEngine:
         blocked = _detect_block(page)
         if blocked:
             raise BlockedError(blocked)
+        if _profile_unavailable(page):
+            return False, "unavailable: account deactivated/deleted, or Facebook throttling"
         _human_pause(1.8, 2.6)
 
         following = _find_button(page, T["following"], prefer_popup=True)
@@ -1699,6 +1835,13 @@ class FacebookEngine:
         did = []
         if following is not None and _click(following):
             if _click_menu_item(page, T["unfollow"], timeout=5):
+                # Newer UI: the "Unfollow" entry is a radio inside a "Follow
+                # settings" dialog and takes effect only after "Update". Older UI
+                # unfollows immediately and has no such button.
+                _human_pause(0.4, 0.8)
+                committed = _commit_follow_settings(page, T["update"], timeout=4)
+                if committed:
+                    self._log_event("info", f"Clicked '{committed}' to confirm unfollow.")
                 did.append("unfollowed")
                 _human_pause(0.9, 1.4)
             else:
@@ -1873,6 +2016,145 @@ class FacebookEngine:
         logger.info(f"Discarded parked purge queue ({n} item(s)).")
         return {"success": True, "message": f"Cleared {n} queued removal(s).", "count": n}
 
+    # -- diagnostics -------------------------------------------------------
+
+    def diagnose_friends(self) -> Dict[str, Any]:
+        """
+        Read-only: load /me/friends LIVE in the automation browser, collect the
+        list it actually sees right now, compare against the cached scan, and
+        probe a cached-but-not-live profile to see if it's 'content unavailable'.
+        Answers: is the cache stale, or is Facebook serving the bot a different list?
+        """
+        if self.is_scanning or self.is_purging:
+            return {"error": "Stop the running scan/purge first."}
+        try:
+            session.start()
+        except Exception as e:
+            return {"error": f"Could not start the browser: {e}"}
+
+        def _job(page, ctx):
+            if not _cookie_user_id(ctx):
+                return {"error": "Not logged in."}
+            self._resolve_owner(page, ctx)
+
+            if not _goto(page, f"{FB_HOME}/me/friends"):
+                return {"error": "Could not open /me/friends"}
+            _dismiss_overlays(page)
+            _wait_for_main(page)
+
+            cfg = {"kind": "friend", "requireAvatar": True}
+            live: Dict[str, str] = {}
+            prev = -1
+            stale = 0
+            prev_height = 0
+            for _ in range(120):
+                try:
+                    for r in page.evaluate(COLLECT_JS, cfg):
+                        if r.get("url"):
+                            live[r["url"]] = r.get("name", "")
+                except Exception:
+                    pass
+                nh = _scroll_and_grow(page, prev_height, settle=2.5)
+                if len(live) == prev and nh == prev_height:
+                    stale += 1
+                    if stale >= 4:
+                        break
+                else:
+                    stale = 0
+                prev = len(live)
+                prev_height = nh
+
+            live_urls = {u.lower().rstrip("/") for u in live}
+            with self._lock:
+                cached = list(self.data.get("friends", []))
+            only_cache = [c for c in cached
+                          if (c.get("url") or "").lower().rstrip("/") not in live_urls]
+            only_live = [u for u in live if u.lower().rstrip("/") not in
+                         {(c.get("url") or "").lower().rstrip("/") for c in cached}]
+
+            # Probe a sample of friends that ARE in the live list, to see whether
+            # some are in-list-but-profile-unavailable (i.e. deactivated friends).
+            sample_targets = [c for c in cached][:5]
+            sample_targets.append({"name": "user-reported", "url": f"{FB_HOME}/waqar.dogar.9461"})
+            probes = []
+            for c in sample_targets:
+                key = (c.get("url") or "").lower().rstrip("/")
+                in_live = key in live_urls
+                if not _goto(page, c["url"], timeout=40000):
+                    probes.append({"name": c["name"], "url": c["url"], "in_live_list": in_live, "loaded": False})
+                    continue
+                _wait_for_main(page)
+                time.sleep(1.2)
+                probes.append({
+                    "name": c["name"], "url": c["url"], "in_live_list": in_live,
+                    "loaded": True, "profile_unavailable": _profile_unavailable(page),
+                    "final_url": page.url,
+                })
+
+            # DECISIVE throttle test: your own profile and a public page can NEVER
+            # be genuinely "content unavailable". If they are, the session is blocked.
+            control = []
+            for label, curl in (("own_profile", self.owner_url or f"{FB_HOME}/me"),
+                                ("public_meta", f"{FB_HOME}/zuck"),
+                                ("friends_page", f"{FB_HOME}/me/friends")):
+                if _goto(page, curl, timeout=40000):
+                    _wait_for_main(page)
+                    time.sleep(1.0)
+                    control.append({"what": label, "url": curl,
+                                    "unavailable": _profile_unavailable(page),
+                                    "final_url": page.url})
+                else:
+                    control.append({"what": label, "url": curl, "loaded": False})
+
+            return {
+                "owner": {"id": self.owner_id, "name": self.owner_name, "url": self.owner_url},
+                "control_probes": control,
+                "live_friends_seen": len(live_urls),
+                "cached_friends": len(cached),
+                "in_cache_but_not_live": len(only_cache),
+                "in_live_but_not_cache": len(only_live),
+                "sample_cache_only": [{"name": c["name"], "url": c["url"]} for c in only_cache[:8]],
+                "probes": probes,
+            }
+
+        try:
+            return session.submit(_job, "diag-friends", timeout=300)
+        except Exception as e:
+            return {"error": str(e)}
+
+    # -- full reset --------------------------------------------------------
+
+    def reset_all(self, wipe_history: bool = True) -> Dict[str, Any]:
+        """
+        Wipe everything back to zero: all scanned friends/groups/pages, every
+        selection, the parked queue, and (optionally) the removal history. Does
+        NOT log you out of Facebook -- the browser session is separate.
+        """
+        if self.is_scanning or self.is_purging:
+            return {"success": False, "message": "Stop the running scan/purge before resetting."}
+
+        with self._lock:
+            self.data = {"friends": [], "groups": [], "pages": [], "last_scan_time": None}
+            self.scan_info = {
+                "is_scanning": False, "stage": "idle", "message": "Ready",
+                "current_count": 0, "category": "all",
+            }
+            self.purge_progress = self._blank_progress()
+            self.last_error = None
+            self.save_cached_data()
+
+        self._clear_queue_state()
+        if wipe_history:
+            try:
+                if PURGE_LOG_FILE.exists():
+                    PURGE_LOG_FILE.unlink()
+            except Exception as e:
+                logger.debug(f"Could not wipe purge history: {e}")
+
+        logger.info("Reset: wiped all scanned data, selections, queue"
+                    + (" and history." if wipe_history else "."))
+        return {"success": True, "message": "Everything wiped. Starting from zero."}
+
     def execute_purge_queue(self, items: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Start a fresh removal run. Each item is checkpointed so it survives a
         crash, a closed browser, or a power cut and can be resumed later."""
@@ -1973,6 +2255,7 @@ class FacebookEngine:
 
             newly_removed: List[Dict[str, str]] = []
             attempts = 0
+            consec_unavail = 0     # consecutive "content unavailable" hits -> throttle guard
 
             def _pause_exit():
                 # Persist what we already removed before bailing out, so the
@@ -2073,8 +2356,37 @@ class FacebookEngine:
                 if self.should_stop_purge and not ok:
                     break
 
+                # A run of "content unavailable" almost always means Facebook is
+                # throttling you, not that every friend deleted their account.
+                # Pause to protect the account rather than burning the whole queue.
+                is_unavail = (not ok) and isinstance(detail, str) and detail.startswith("unavailable")
+                if is_unavail:
+                    consec_unavail += 1
+                    # A long unbroken run means Facebook is throttling (it hides EVERY
+                    # profile once triggered), not that you have that many dead friends
+                    # clustered together. Pause to protect the account.
+                    if consec_unavail >= 5:
+                        self._log_event("error",
+                            "5 profiles in a row showed 'content unavailable' -- Facebook is throttling "
+                            "your profile views. Paused to protect your account. STOP for several hours "
+                            "(ideally a day) to let the limit lift, then Resume. Removing friends this "
+                            "fast by opening each profile is what triggers this.")
+                        with self._lock:
+                            self.purge_progress["blocked"] = True
+                        return _pause_exit()      # keep this item pending for Resume
+                else:
+                    consec_unavail = 0
+
                 attempts += 1
-                if ok:
+                if is_unavail:
+                    # "Content unavailable" is USUALLY Facebook throttling your
+                    # profile views (not that the friend is deleted), so DO NOT
+                    # remove them from the list -- they're real, just unreachable
+                    # right now. Count it as a failure and let the run-of-N guard
+                    # pause the purge if it's a throttle wave.
+                    item["status"] = "failed"
+                    self._log_event("warning", f"Can't open {name}'s profile (unavailable -- likely Facebook throttling your profile views).")
+                elif ok:
                     item["status"] = "done"
                     self._log_event("success", f"{itype.capitalize()} removed - {name} ({detail})")
                     self._mark_item_removed(url, itype)
