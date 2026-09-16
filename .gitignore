@@ -1,0 +1,23 @@
+# Python caches
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+
+# User & Session runtime data (Private)
+scanned_data.json
+purge_history.json
+*.log
+fb_cleaner.log
+fb_cleaner_console.log
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# OS & IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
