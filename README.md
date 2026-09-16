@@ -1,110 +1,101 @@
-# Facebook Zenith Cleaner
+# 🛡️ Facebook Zenith Cleaner
 
-Desktop app for triaging and bulk-removing Facebook **friends**, **joined groups**, and **liked/followed pages**.
+<div align="center">
 
-Scans your account into a local dashboard, lets you review every item and uncheck the ones you want to keep, then removes the rest at a human pace with anti-block cooling breaks.
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](LICENSE)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.100%2B-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![Playwright](https://img.shields.io/badge/Playwright-Automated%20Browser-2EAD33?style=for-the-badge&logo=playwright&logoColor=white)](https://playwright.dev/)
+[![Anti-Ban](https://img.shields.io/badge/Pacing-Humanized%20Cooling%20Intervals-10B981?style=for-the-badge)](https://github.com/Kamran5H/FacebookCleaner)
+[![Privacy](https://img.shields.io/badge/Privacy-100%25%20Local%20Execution-6366F1?style=for-the-badge)](https://github.com/Kamran5H/FacebookCleaner)
+
+**Enterprise desktop triage suite for bulk-scanning, auditing, and safely pruning Facebook friends, joined groups, and followed pages with humanized pacing.**
+
+[Features](#-key-features) • [Architecture](#-architecture) • [Safety & Anti-Ban](#-safety--anti-ban-pacing) • [Quickstart](#-quick-start) • [License](#-license)
+
+</div>
 
 ---
 
-## Quick start
+## 🌟 Executive Overview
 
+**Facebook Zenith Cleaner** is a privacy-first, desktop application engineered with **FastAPI** and **Playwright**. It provides account owners complete autonomy to audit and declutter their Facebook digital footprint. 
+
+Unlike untrusted third-party browser extensions that compromise passwords, Facebook Zenith Cleaner runs entirely on your local machine. It scans your friends, joined groups, and followed pages into an interactive, visual web dashboard where you review every item, uncheck people or communities you want to keep, and bulk-prune the rest at safe, humanized rates.
+
+---
+
+## 🚀 Key Features
+
+- **👥 Triple-Vector Triage**:
+  - **Friends**: Scans friend lists, highlights inactive accounts, and handles bulk unfriending.
+  - **Groups**: Identifies dead, archived, or spam groups and executes automated group leaves.
+  - **Pages**: Scans all liked/followed brand pages and unfollows with one click.
+- **🛡️ Humanized Anti-Ban Cooling**: Implements randomized jitter intervals (3s to 8s between actions) with mandatory cooling pauses after every batch of 20 actions to prevent Facebook automated action blocks.
+- **🎨 Interactive Web Dashboard**: Filter items with live instant search, select/deselect all, and view real-time operation progress bars.
+- **🔒 Zero Credential Storage**: You log into Facebook once through an isolated, visible Playwright browser instance. Your password is never read, recorded, or transmitted.
+- **⚡ One-Click Windows Launch**: Ships with `setup.bat` and `run_fb_cleaner.bat` for instant execution without manual terminal commands.
+
+---
+
+## 🏗️ Architecture
+
+```mermaid
+flowchart TD
+    A[User: launch run_fb_cleaner.bat] --> B(FastAPI Server: backend/)
+    B --> C[Interactive Dashboard: frontend/]
+    B <-->|Playwright Automation Engine| D[Isolated Chrome Session]
+    D <-->|User Performs Official Login| E[Facebook Web]
+    D -->|Collect DOM Data| B
+    B -->|Render Friends / Groups / Pages| C
+    C -->|User Selects Items to Prune| B
+    B -->|Humanized Action Loop with Jitter| D
+    D -->|Click Unfriend / Leave Group| E
+```
+
+---
+
+## 📁 Repository Structure
+
+```text
+FacebookCleaner/
+├── backend/                    # FastAPI application, routers & business logic
+├── frontend/                   # Interactive triage dashboard (HTML/CSS/JS)
+├── setup.bat                   # Turnkey environment installer
+├── run_fb_cleaner.bat          # Desktop application launcher
+├── launch.vbs                  # Silent background launcher
+├── fb_cleaner.ico              # High-resolution application icon
+├── requirements.txt            # Python dependencies (fastapi, uvicorn, playwright)
+├── .gitignore                  # Virtualenv and runtime cache exclusions
+└── LICENSE                     # Open-source MIT License
+```
+
+---
+
+## ⚡ Quick Start
+
+### 1. Installation
+Simply double-click [`setup.bat`](setup.bat) on Windows, or run manually:
 ```bash
-setup.bat
+git clone https://github.com/Kamran5H/FacebookCleaner.git
+cd FacebookCleaner
+
+python -m venv .venv
+.venv\Scripts\activate
+
+pip install -r requirements.txt
+playwright install chromium
 ```
 
-Run once. It installs the Python packages, downloads the bundled Chromium, builds the icon, and puts the shortcut on your desktop.
-
-Then launch from **Facebook Zenith Cleaner** on the desktop (or run `launch.vbs`). The dashboard opens at `http://127.0.0.1:8766`.
-
-1. **Open Browser** → log into Facebook once. The session is remembered.
-2. **Scan All** (or **Scan Friends/Groups/Pages Only**).
-3. Review the list. Everything starts checked — **uncheck what you want to keep**.
-4. **Execute Ultra-Safe Purge**.
-
----
-
-## How it works
-
-One visible Chromium window, driven by Playwright, owned by a single worker thread. You log in there yourself; the app never sees or stores your password. The profile lives in `%LOCALAPPDATA%\FBCleaner\Profile` — deliberately outside OneDrive, because sync locks corrupt Chromium profiles.
-
-| Category | Source |
-|---|---|
-| Friends | `/me/friends` |
-| Groups | `/groups/joins` |
-| Pages | `/pages/?category=liked` **and** `/pages/?category=following` |
-
-Scanning is event-driven: each scroll returns the moment new content actually renders instead of sleeping a fixed interval, and a list ends after three consecutive quiet passes (count *and* page height both stopped moving). That makes large lists 2–3× faster to scan without truncating results. Names are Unicode-normalized, so stylized and Urdu names are handled correctly. Your own account is identified by the `c_user` cookie and can never be queued for removal.
-
-**Removal pacing:** 5–9s between items, plus an 18–28s cooling break every 15. Each removal is verified against the page afterwards ("Add friend" reappeared, "Join group" reappeared), so the success count reflects what actually happened rather than what was clicked. Items already removed are detected and skipped instead of counted as failures.
-
-**Interruption-proof.** Every removal is checkpointed to `purge_queue.json` as it happens, so nothing is ever lost:
-
-- **Internet drops mid-run** → the purge *pauses* (it never counts a network blip as a failed removal), waits for the connection to come back, then retries the exact item it was on and carries on. The modal shows "⏸️ Paused — waiting for the internet".
-- **Browser closed, app killed, or power cut** → the parked queue survives on disk. On the next launch the dashboard shows a **Resume Purge** banner with the exact count still to go; one click continues from precisely where it left off, skipping everything already done.
-- **Facebook throws a security checkpoint / "temporarily blocked" wall** → the purge stops *immediately* instead of hammering the block (which would only deepen it), parks the rest, and tells you to clear the check in the browser and then Resume. This protects the account.
-- Stopping manually also parks the remainder, so you can Resume later.
-
-**"Content isn't available" profiles = profile-view throttling.** If removals start failing because friend profiles show *"This content isn't available"* — while your own profile, public pages, and the friends list still load fine — Facebook has **rate-limited your automation session from viewing friend profiles**. This is caused by the removal engine opening one profile after another too quickly. It is session-specific: your normal browser is unaffected, which is why the same friends look fine there.
-
-The app detects this wall, logs it, and **pauses after 5 in a row** ("content unavailable") with instructions to stop. **The fix is time:** stop the automation browser for several hours (ideally a day) and the limit lifts; verify by opening a friend's profile in the automation window — when it loads again, Resume. To avoid it, remove in **smaller batches** with long gaps. (These friends are real and still in your list — the app never deletes them locally just because a profile won't load.)
-
-Every removal is **verified against the page** before it counts — unfriend needs "Add friend" back, leave needs "Join" back, unfollow needs the follow/like state cleared. Anything that can't be confirmed is retried once (each attempt re-navigates and re-checks, so it's safe) and otherwise reported as a failure rather than a false success.
-
-Stop is available at any time and takes effect within about a second, including during a cooling break or a pause.
-
----
-
-## Dashboard
-
-- **Per-category control** — each of the Friends, Groups, and Pages cards has its own **Scan** and **Delete Checked** button, so you scan and remove one category at a time without touching the others. The Delete button shows the exact checked count and disables itself when nothing is selected. (Scan All and Purge-everything remain for when you do want the lot.)
-- **Work during a purge** — the removal window has a **← Back to Dashboard** button. Minimize it and the purge keeps running in the background (a floating pill, bottom-right, shows live progress and turns amber/red if it pauses or hits a block — click it to reopen). Meanwhile the dashboard stays fully usable: search, switch tabs, uncheck people to keep, and plan the next batch. Removed items disappear from the list and every count in real time, without yanking your scroll position.
-- **Reset** — the header **♻️ Reset** wipes everything back to zero: all scanned friends/groups/pages, every selection, the parked queue, and the removal history. It does **not** log you out of Facebook and removes nothing from your account — it just clears the app's local data so you can start a fresh scan. (Disabled while a scan or purge is running.)
-- **Tabs** per category, plus a Markdown checklist view
-- **Search** by name or link
-- **Pagination** at 50 / 100 / 300 / All per page
-- **Batch controls**: select or keep a page, invert a page, select or keep a whole tab
-- **Purge scope**: current tab only, or everything checked across all tabs
-- **Export** to CSV (UTF-8 BOM, so Excel renders Urdu correctly) or Markdown
-- **Import** JSON from the in-tab collector script, by paste, file picker, or drag-and-drop
-
-Unchecking survives a rescan — a rescan will not silently re-check items you decided to keep. Cancelling a scan mid-run keeps the list you already had instead of replacing it with the partial result.
-
----
-
-## Files
-
+### 2. Launch Cleaner
+Double-click [`run_fb_cleaner.bat`](run_fb_cleaner.bat) or run:
+```bash
+python run_scan_direct.py
 ```
-backend/fb_engine.py   browser session, scanners, removal flows
-backend/app.py         FastAPI server + JSON API
-frontend/              dashboard (index.html, app.js, style.css)
-launch.vbs             desktop launcher (starts the server, opens the dashboard)
-setup.bat              one-time install
-run_fb_cleaner.bat     same thing with a visible console, for debugging
-create_icon.py         regenerates fb_cleaner.ico
-create_desktop_shortcut.py  rewrites the desktop shortcut and refreshes the icon cache
-scanned_data.json      your scanned lists and keep/remove choices
-purge_history.json     what was removed and when
-fb_cleaner.log         run log — check here first when something misbehaves
-```
-
-To change the icon: edit `create_icon.py`, then run `python create_icon.py && python create_desktop_shortcut.py`.
+Open [http://localhost:8000](http://localhost:8000) to begin auditing your account.
 
 ---
 
-## Troubleshooting
+## 📜 License
 
-**"Could not open the automation browser"** — a previous browser is still holding the profile. The app force-clears these on its own; if it persists, close every Chromium window titled *Facebook* and retry.
-
-**Scan finds 0 items** — you are signed out. Click **Open Browser** and check the badge reads *Signed in*.
-
-**Nothing happens on double-click** — run `run_fb_cleaner.bat` to see the console, or read `fb_cleaner_console.log`.
-
-**Removals failing** — Facebook may be rate-limiting. Stop, wait an hour, resume. The log names the exact step that failed for each item.
-
----
-
-## Notes
-
-- Removals are permanent. Facebook has no undo for unfriending, leaving a group, or unliking a page.
-- Purge only ever acts on items still checked **on the server**, resolved at start time — a stale browser tab cannot remove the wrong people.
-- Requires Python 3.11+ on Windows.
+This project is open-source and released under the [MIT License](LICENSE).  
+Copyright (c) 2024-2026 **Kamran Ashraf**.
