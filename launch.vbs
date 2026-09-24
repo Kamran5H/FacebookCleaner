@@ -1,44 +1,44 @@
-' Facebook Zenith Cleaner - launcher
-'
-' Starts the local server (silently, no console window) and lets the server
-' itself open the dashboard once the port is actually listening. The old
-' version guessed with a fixed 1-second sleep and opened a second window when
-' the app was already running.
-
+' Facebook Zenith Cleaner - Resilient Native Launcher
 Option Explicit
 
-Dim shell, fso, appDir, pythonExe, script, cmd, i, candidates
+Dim shell, fso, appDir, pythonExe, script, cmd, i, candidates, cand, pyCandidates
 
 Set shell = CreateObject("WScript.Shell")
 Set fso = CreateObject("Scripting.FileSystemObject")
 
 appDir = fso.GetParentFolderName(WScript.ScriptFullName)
-shell.CurrentDirectory = appDir
-
-script = appDir & "\backend\app.py"
-If Not fso.FileExists(script) Then
-    MsgBox "Cannot find:" & vbCrLf & script, vbCritical, "Facebook Zenith Cleaner"
-    WScript.Quit 1
+If Not fso.FileExists(appDir & "\backend\app.py") Then
+    candidates = Array( _
+        "C:\Users\chkam\OneDrive\Desktop\BrandFinder\FacebookCleaner", _
+        "C:\Users\chkam\OneDrive\Desktop\FacebookCleaner", _
+        "C:\Users\chkam\Desktop\BrandFinder\FacebookCleaner" _
+    )
+    For Each cand In candidates
+        If fso.FileExists(cand & "\backend\app.py") Then
+            appDir = cand
+            Exit For
+        End If
+    Next
 End If
 
-' Prefer pythonw.exe so no black console window flashes up.
-candidates = Array( _
+shell.CurrentDirectory = appDir
+script = appDir & "\backend\app.py"
+
+pyCandidates = Array( _
     shell.ExpandEnvironmentStrings("%LOCALAPPDATA%") & "\Programs\Python\Python314\pythonw.exe", _
-    shell.ExpandEnvironmentStrings("%LOCALAPPDATA%") & "\Programs\Python\Python313\pythonw.exe", _
-    shell.ExpandEnvironmentStrings("%LOCALAPPDATA%") & "\Programs\Python\Python312\pythonw.exe", _
-    shell.ExpandEnvironmentStrings("%LOCALAPPDATA%") & "\Programs\Python\Python311\pythonw.exe", _
-    "C:\Program Files\Python314\pythonw.exe", _
-    "C:\Program Files\Python313\pythonw.exe")
+    shell.ExpandEnvironmentStrings("%LOCALAPPDATA%") & "\Programs\Python\Python314\python.exe", _
+    "C:\Users\chkam\AppData\Local\Programs\Python\Python314\pythonw.exe", _
+    "C:\Users\chkam\AppData\Local\Programs\Python\Python314\python.exe", _
+    "pythonw.exe", _
+    "python.exe")
 
 pythonExe = ""
-For i = 0 To UBound(candidates)
-    If pythonExe = "" And fso.FileExists(candidates(i)) Then pythonExe = candidates(i)
+For i = 0 To UBound(pyCandidates)
+    If pythonExe = "" And fso.FileExists(pyCandidates(i)) Then pythonExe = pyCandidates(i)
 Next
 
-If pythonExe = "" Then pythonExe = "pythonw.exe"   ' fall back to PATH
+If pythonExe = "" Then pythonExe = "python.exe"
 
-' --open makes the server wait for its own port, then open the dashboard as an
-' app window. If an instance is already running it just focuses that one.
 cmd = Chr(34) & pythonExe & Chr(34) & " " & Chr(34) & script & Chr(34) & " --open"
 
 On Error Resume Next
@@ -46,10 +46,5 @@ shell.Run cmd, 0, False
 If Err.Number <> 0 Then
     Err.Clear
     shell.Run "cmd.exe /c python " & Chr(34) & script & Chr(34) & " --open", 0, False
-    If Err.Number <> 0 Then
-        MsgBox "Could not start Python." & vbCrLf & vbCrLf & _
-               "Install Python 3.11+ and run setup.bat once.", vbCritical, _
-               "Facebook Zenith Cleaner"
-    End If
 End If
 On Error GoTo 0
