@@ -586,11 +586,26 @@
     return false;
   }
 
+  // The signed-in account is identified by Facebook's c_user cookie (its numeric
+  // id), never by a list of names: a name list silently shields every friend who
+  // shares the owner's name, and protects nobody else who runs this tool.
+  function ownerId() {
+    const m = document.cookie.match(/(?:^|;\s*)c_user=(\d+)/);
+    return m ? m[1] : '';
+  }
+
+  function isProtectedOwner(name, url = '') {
+    const id = ownerId();
+    if (!id || !url) return false;
+    const u = String(url).toLowerCase().split('#')[0].replace(/\/+$/, '');
+    return u.includes(`id=${id}`) || u.endsWith(`/${id}`);
+  }
+
   async function executeSingleItemRemoval(it) {
     const name = it.name || '';
     const url = it.url || '';
 
-    if (name.toLowerCase().includes('kamran') || url.includes('chkamran32b')) {
+    if (isProtectedOwner(name, url)) {
       return true;
     }
 

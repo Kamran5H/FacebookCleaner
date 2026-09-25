@@ -1,0 +1,6 @@
+* text=auto
+# Windows-only scripts: cmd.exe mis-parses labels/goto with LF endings.
+*.bat text eol=crlf
+*.vbs text eol=crlf
+*.png binary
+*.ico binary

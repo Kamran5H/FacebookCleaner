@@ -37,6 +37,7 @@ import tempfile
 import threading
 import time
 import unicodedata
+import urllib.parse
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set
 
@@ -47,10 +48,15 @@ LOCAL_APP_DIR = Path(os.environ.get("LOCALAPPDATA", tempfile.gettempdir()))
 PROFILE_DIR = LOCAL_APP_DIR / "FBCleaner" / "Profile"
 PROFILE_DIR.mkdir(parents=True, exist_ok=True)
 
-DATA_CACHE_FILE = BASE_DIR / "scanned_data.json"
-PURGE_LOG_FILE = BASE_DIR / "purge_history.json"
-PURGE_QUEUE_FILE = BASE_DIR / "purge_queue.json"   # crash/power-safe removal checkpoint
-LOG_FILE = BASE_DIR / "fb_cleaner.log"
+# Where scans, history and logs live. Defaults to the app folder; FBC_DATA_DIR
+# moves them (the test suite uses this so it can never touch your real data).
+DATA_DIR = Path(os.environ.get("FBC_DATA_DIR") or BASE_DIR)
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+DATA_CACHE_FILE = DATA_DIR / "scanned_data.json"
+PURGE_LOG_FILE = DATA_DIR / "purge_history.json"
+PURGE_QUEUE_FILE = DATA_DIR / "purge_queue.json"   # crash/power-safe removal checkpoint
+LOG_FILE = DATA_DIR / "fb_cleaner.log"
 
 logger = logging.getLogger("fbcleaner")
 if not logger.handlers:
@@ -1038,6 +1044,15 @@ def _commit_follow_settings(page, labels: List[str], timeout: float = 4.0):
     return None
 
 
+def _is_facebook_url(url: str) -> bool:
+    try:
+        parts = urllib.parse.urlsplit(url)
+    except ValueError:
+        return False
+    host = (parts.hostname or "").lower()
+    return parts.scheme in ("http", "https") and (host == "facebook.com" or host.endswith(".facebook.com"))
+
+
 def _human_pause(a: float = 0.6, b: float = 1.3):
     time.sleep(random.uniform(a, b))
 
@@ -1341,6 +1356,10 @@ class FacebookEngine:
             if not name or not url:
                 continue
             if len(name) < 2 or len(name) > 90 or "\n" in name:
+                continue
+            # The purge browser navigates to this URL while logged in, so an
+            # imported list must never be able to point it anywhere but Facebook.
+            if not _is_facebook_url(url):
                 continue
 
             norm = normalize_text(name)
@@ -1727,7 +1746,7 @@ class FacebookEngine:
     # -- removal flows -----------------------------------------------------
 
     def _unfriend(self, page, item: Dict[str, Any]) -> tuple[bool, str]:
-        name, url = item.get("name", "Friend"), item.get("url", "")
+        url = item.get("url", "")
         if not url:
             return False, "no profile url"
         _goto_or_transient(page, url, timeout=45000)   # raises on net loss -> pause+retry
@@ -1770,7 +1789,7 @@ class FacebookEngine:
         return False, "removal not confirmed by the page"
 
     def _leave_group(self, page, item: Dict[str, Any]) -> tuple[bool, str]:
-        name, url = item.get("name", "Group"), item.get("url", "")
+        url = item.get("url", "")
         if not url:
             return False, "no group url"
         _goto_or_transient(page, url, timeout=45000)
@@ -2074,8 +2093,7 @@ class FacebookEngine:
 
             # Probe a sample of friends that ARE in the live list, to see whether
             # some are in-list-but-profile-unavailable (i.e. deactivated friends).
-            sample_targets = [c for c in cached][:5]
-            sample_targets.append({"name": "user-reported", "url": f"{FB_HOME}/waqar.dogar.9461"})
+            sample_targets = cached[:5]
             probes = []
             for c in sample_targets:
                 key = (c.get("url") or "").lower().rstrip("/")
