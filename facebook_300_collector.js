@@ -208,21 +208,19 @@
 
   // --- Normalization & Protection Helpers ---
 
-  function normalizeUnicode(str) {
-    if (!str) return '';
-    return String(str)
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .toLowerCase()
-      .trim();
+  // The signed-in account is identified by Facebook's c_user cookie (its numeric
+  // id), never by a list of names: a name list silently shields every friend who
+  // shares the owner's name, and protects nobody else who runs this tool.
+  function ownerId() {
+    const m = document.cookie.match(/(?:^|;\s*)c_user=(\d+)/);
+    return m ? m[1] : '';
   }
 
   function isProtectedOwner(name, url = '') {
-    if (!name) return false;
-    const norm = normalizeUnicode(name);
-    const urlNorm = normalizeUnicode(url);
-    const protectedStems = ['kamran', 'ashraf', 'chkamran', 'chkamran32b'];
-    return protectedStems.some(stem => norm.includes(stem) || urlNorm.includes(stem));
+    const id = ownerId();
+    if (!id || !url) return false;
+    const u = String(url).toLowerCase().split('#')[0].replace(/\/+$/, '');
+    return u.includes(`id=${id}`) || u.endsWith(`/${id}`);
   }
 
   function isForbiddenButton(el) {
