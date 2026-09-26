@@ -5,7 +5,6 @@ and isolated session profile.
 import ctypes
 from pathlib import Path
 import subprocess
-import sys
 import time
 
 BASE_DIR = Path(__file__).resolve().parent

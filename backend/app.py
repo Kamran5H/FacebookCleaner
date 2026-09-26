@@ -12,7 +12,6 @@ from __future__ import annotations
 import csv
 import io
 import json
-import logging
 import os
 import socket
 import subprocess
@@ -39,7 +38,7 @@ FRONTEND_DIR = BASE_DIR / "frontend"
 # and no message. Point both at a console log file instead.
 if sys.stdout is None or sys.stderr is None:
     try:
-        _console_log = open(BASE_DIR / "fb_cleaner_console.log", "a", encoding="utf-8", buffering=1)
+        _console_log = open(Path(os.environ.get("FBC_DATA_DIR") or BASE_DIR) / "fb_cleaner_console.log", "a", encoding="utf-8", buffering=1)
         if sys.stdout is None:
             sys.stdout = _console_log
         if sys.stderr is None:
@@ -54,14 +53,14 @@ if str(BACKEND_DIR) not in sys.path:
 
 from fb_engine import (  # noqa: E402
     CATEGORY_URLS,
+    PURGE_LOG_FILE,
     PLURAL,
     SINGULAR,
     fb_engine,
-    logger,
     session,
 )
 
-APP_VERSION = "2.0.0"
+APP_VERSION = "2.1.0"
 DEFAULT_PORT = 8766
 
 app = FastAPI(
@@ -70,13 +69,82 @@ app = FastAPI(
     version=APP_VERSION,
 )
 
+LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "[::1]"}
+
+# The in-tab collector and the browser extension run on facebook.com and push
+# their results to /api/import. That is the only cross-origin write allowed.
+FACEBOOK_ORIGINS = {
+    "https://www.facebook.com",
+    "https://web.facebook.com",
+    "https://m.facebook.com",
+    "https://facebook.com",
+}
+CROSS_ORIGIN_IMPORT_PATH = "/api/import"
+UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://127.0.0.1:8766", "http://localhost:8766"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=[f"http://{h}:{DEFAULT_PORT}" for h in ("127.0.0.1", "localhost")],
+    allow_credentials=False,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
 )
+
+
+def _hostname(host_header: str) -> str:
+    """'127.0.0.1:8766' -> '127.0.0.1', '[::1]:8766' -> '[::1]'."""
+    host = (host_header or "").strip().lower()
+    if host.startswith("["):
+        return host.split("]", 1)[0] + "]"
+    return host.rsplit(":", 1)[0] if ":" in host else host
+
+
+def _is_loopback_origin(origin: str) -> bool:
+    if not origin.startswith("http://"):
+        return False
+    return _hostname(origin[len("http://"):].split("/", 1)[0]) in LOOPBACK_HOSTS
+
+
+def _import_cors_headers(origin: str) -> Dict[str, str]:
+    return {
+        "Access-Control-Allow-Origin": origin,
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
+        # Chrome's Private/Local Network Access preflight for https -> 127.0.0.1.
+        "Access-Control-Allow-Private-Network": "true",
+        "Access-Control-Max-Age": "600",
+        "Vary": "Origin",
+    }
+
+
+@app.middleware("http")
+async def _local_only_guard(request, call_next):
+    """Keep the API usable only by the local dashboard (and the FB-tab importer).
+
+    * Host check: a DNS-rebinding page (evil.example -> 127.0.0.1) arrives with
+      a foreign Host header and could otherwise read your scanned friend list.
+    * Origin check: browsers attach Origin to every cross-site POST, so any web
+      page you happen to visit can no longer fire /api/purge/resume or /api/scan
+      with a "simple" request that CORS never blocks.
+    """
+    if _hostname(request.headers.get("host", "")) not in LOOPBACK_HOSTS:
+        return PlainTextResponse("Forbidden host", status_code=403)
+
+    origin = request.headers.get("origin", "")
+    path = request.url.path
+
+    if path == CROSS_ORIGIN_IMPORT_PATH and origin in FACEBOOK_ORIGINS:
+        if request.method == "OPTIONS":
+            return Response(status_code=204, headers=_import_cors_headers(origin))
+        response = await call_next(request)
+        response.headers.update(_import_cors_headers(origin))
+        return response
+
+    if request.method in UNSAFE_METHODS and path.startswith("/api/"):
+        if origin and not _is_loopback_origin(origin):
+            return PlainTextResponse("Cross-origin request blocked", status_code=403)
+
+    return await call_next(request)
 
 
 @app.middleware("http")
@@ -464,7 +532,7 @@ def get_purge_progress():
 
 @app.get("/api/purge/history")
 def get_purge_history():
-    path = BASE_DIR / "purge_history.json"
+    path = PURGE_LOG_FILE
     if not path.exists():
         return {"history": []}
     try:

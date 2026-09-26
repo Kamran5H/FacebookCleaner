@@ -16,7 +16,10 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 TARGET_VBS = BASE_DIR / "launch.vbs"
 ICON_PATH = BASE_DIR / "fb_cleaner.ico"
-SHORTCUT_NAME = "Facebook Zenith Cleaner - Kamran Ashraf.lnk"
+SHORTCUT_NAME = "Facebook Zenith Cleaner.lnk"
+# Older releases used a personalised name; clean those up so the desktop
+# does not end up with two icons after an upgrade.
+LEGACY_SHORTCUT_NAMES = ("Facebook Zenith Cleaner - Kamran Ashraf.lnk",)
 
 
 def desktop_dirs() -> list[Path]:
@@ -60,14 +63,22 @@ def write_shortcut(path: Path) -> bool:
         return write_shortcut_powershell(path)
 
 
+def _ps_quote(value) -> str:
+    """Single-quoted PowerShell literal: an apostrophe in a path (a user folder
+    like O'Brien) must not end the string early."""
+    return "'" + str(value).replace("'", "''") + "'"
+
+
 def write_shortcut_powershell(path: Path) -> bool:
+    arguments = _ps_quote('"' + str(TARGET_VBS) + '"')
+    icon = _ps_quote(f"{ICON_PATH},0")
     ps = (
         "$ws = New-Object -ComObject WScript.Shell; "
-        f"$s = $ws.CreateShortcut('{path}'); "
+        f"$s = $ws.CreateShortcut({_ps_quote(path)}); "
         "$s.TargetPath = 'wscript.exe'; "
-        f"$s.Arguments = '\"{TARGET_VBS}\"'; "
-        f"$s.WorkingDirectory = '{BASE_DIR}'; "
-        f"$s.IconLocation = '{ICON_PATH},0'; "
+        f"$s.Arguments = {arguments}; "
+        f"$s.WorkingDirectory = {_ps_quote(BASE_DIR)}; "
+        f"$s.IconLocation = {icon}; "
         "$s.Description = 'Facebook Zenith Cleaner'; "
         "$s.WindowStyle = 7; "
         "$s.Save()"
@@ -108,6 +119,11 @@ def main() -> int:
 
     ok = 0
     for d in targets:
+        for legacy in LEGACY_SHORTCUT_NAMES:
+            try:
+                (d / legacy).unlink(missing_ok=True)
+            except Exception as e:
+                print(f"[WARN] Could not remove old shortcut {d / legacy}: {e}")
         path = d / SHORTCUT_NAME
         # Rewriting in place is what makes Explorer re-read the icon.
         if path.exists():

@@ -721,6 +721,9 @@ function render(resetScroll) {
   el.tabSelectionSummary.textContent =
     `${list.length} in tab (${selectedInTab} to remove) - showing ${start}-${end} (${selectedOnPage} checked here)`;
 
+  const selectPageCount = $('select-page-count');
+  if (selectPageCount) selectPageCount.textContent = items.length;
+
   const summary = `Showing ${start}-${end} of ${filtered.length}`;
   el.paginationSummary.textContent = summary;
   if (el.paginationSummaryBottom) el.paginationSummaryBottom.textContent = summary;
@@ -978,6 +981,24 @@ async function setTabSelection(selected) {
 // purge
 // --------------------------------------------------------------------------
 
+// Removals cannot be undone, and every item starts out checked. A plain OK/Cancel
+// box is one reflexive Enter away from wiping a whole account, so make the user
+// type the word instead.
+function confirmRemoval(headline) {
+  const answer = prompt(
+    `${headline}\n\n` +
+    `Pacing: 5-9s between items, plus an 18-28s cooling break every 15.\n` +
+    `This CANNOT be undone.\n\n` +
+    `Type REMOVE to continue:`
+  );
+  if (answer === null) return false;
+  if (answer.trim().toUpperCase() !== 'REMOVE') {
+    toast('Cancelled - you must type REMOVE to confirm.', 'warning');
+    return false;
+  }
+  return true;
+}
+
 function purgeCategory(category) {
   if (category === 'markdown') { toast('Pick a Friends, Groups or Pages tab first.', 'warning'); return; }
   const list = state[category] || [];
@@ -985,11 +1006,7 @@ function purgeCategory(category) {
   if (!queued.length) { toast(`Nothing checked in ${CAT_LABEL[category]}.`, 'warning'); return; }
 
   const label = CAT_LABEL[category];
-  if (!confirm(
-    `Remove ${queued.length} checked ${label} from your Facebook account?\n\n` +
-    `Pacing: 5-9s between items, plus a cooling break every 15.\n` +
-    `This cannot be undone.`
-  )) return;
+  if (!confirmRemoval(`Remove ${queued.length} checked ${label} from your Facebook account?`)) return;
 
   el.modalHeading.textContent = `Removing ${queued.length} ${label}`;
   runPurge({ category });
@@ -1003,11 +1020,7 @@ function purgeEverything() {
   ];
   if (!queued.length) { toast('Nothing is checked for removal.', 'warning'); return; }
 
-  if (!confirm(
-    `Remove ${queued.length} item(s) across all tabs from your Facebook account?\n\n` +
-    `Pacing: 5-9s between items, plus a cooling break every 15.\n` +
-    `This cannot be undone.`
-  )) return;
+  if (!confirmRemoval(`Remove ${queued.length} item(s) across ALL tabs from your Facebook account?`)) return;
 
   el.modalHeading.textContent = `Removing ${queued.length} items (all tabs)`;
   runPurge({ category: 'all' });

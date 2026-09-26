@@ -21,3 +21,12 @@ env/
 Thumbs.db
 .vscode/
 .idea/
+
+# Private Facebook data & browser profiles -- never commit these
+purge_queue.json
+*.tmp
+fb_session_edge/
+FBCleanerSession/
+
+# Local screenshots of the live dashboard contain real names
+dashboard_*.png

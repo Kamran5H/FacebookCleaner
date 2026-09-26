@@ -6,7 +6,6 @@ Opens a 100% visible Chromium/Edge browser window, waits for login if needed, an
 from pathlib import Path
 import random
 import time
-import unicodedata
 import os
 import tempfile
 import json
@@ -15,24 +14,50 @@ from playwright.sync_api import sync_playwright
 BASE_DIR = Path(__file__).resolve().parent
 SESSION_DIR = Path(os.environ.get("LOCALAPPDATA", tempfile.gettempdir())) / "FBCleanerSession"
 SESSION_DIR.mkdir(parents=True, exist_ok=True)
-CACHE_FILE = BASE_DIR / "scanned_data.json"
+# Same location the dashboard reads (FBC_DATA_DIR overrides it, as in the app).
+CACHE_FILE = Path(os.environ.get("FBC_DATA_DIR") or BASE_DIR) / "scanned_data.json"
 
-PROTECTED_STEMS = {"kamran", "ashraf", "chkamran", "chkamran32b"}
 
-def normalize_text(text: str) -> str:
-    if not text:
-        return ""
-    nfd_str = unicodedata.normalize("NFD", str(text))
-    stripped = "".join(c for c in nfd_str if unicodedata.category(c) != "Mn")
-    return stripped.lower().strip()
+def url_key(url: str) -> str:
+    """Stable identity for an item: two friends can share a name, never a URL."""
+    return (url or "").strip().lower().rstrip("/")
 
-def is_protected_owner(name: str, url: str = "") -> bool:
-    name_norm = normalize_text(name)
-    url_norm = normalize_text(url)
-    for stem in PROTECTED_STEMS:
-        if stem in name_norm or stem in url_norm:
-            return True
-    return False
+
+def owner_id_from_cookies(context) -> str:
+    """The signed-in account's numeric id (Facebook's c_user cookie)."""
+    for c in context.cookies("https://www.facebook.com"):
+        if c.get("name") == "c_user":
+            return str(c.get("value") or "")
+    return ""
+
+
+def is_protected_owner(url: str, owner_id: str) -> bool:
+    """True only for the signed-in account itself -- never a name match, which
+    would silently hide every friend who shares the owner's name."""
+    u = url_key(url)
+    return bool(owner_id) and (f"id={owner_id}" in u or u.endswith(f"/{owner_id}"))
+
+
+def load_previous_choices() -> dict:
+    """url -> selected, so a re-scan never forgets which items you chose to KEEP."""
+    try:
+        with open(CACHE_FILE, "r", encoding="utf-8") as f:
+            old = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    choices = {}
+    for key in ("friends", "groups", "pages"):
+        for it in old.get(key, []) if isinstance(old, dict) else []:
+            if isinstance(it, dict) and it.get("url"):
+                choices[url_key(it["url"])] = bool(it.get("selected", True))
+    return choices
+
+
+def collect(found: dict, discovered: list, owner_id: str) -> None:
+    for it in discovered:
+        key = url_key(it.get("url", ""))
+        if key and key not in found and not is_protected_owner(key, owner_id):
+            found[key] = it
 
 def scan_headful_direct():
     print("=" * 60)
@@ -45,7 +70,6 @@ def scan_headful_direct():
             "--disable-notifications",
             "--start-maximized",
             "--no-default-browser-check",
-            "--no-sandbox"
         ]
 
         try:
@@ -81,11 +105,19 @@ def scan_headful_direct():
             print("Waiting for you to log in...")
             print("!" * 60)
 
-            for _ in range(90):
+            for _ in range(150):
                 time.sleep(2)
                 if "facebook.com" in page.url and page.locator('input[name="email"], button[name="login"]').count() == 0 and "login" not in page.url.lower():
                     print("[OK] Logged in successfully!")
                     break
+            else:
+                # Scanning a login page would save empty lists over your real data.
+                print("[ABORT] Not logged in after 5 minutes - nothing was changed.")
+                context.close()
+                return
+
+        owner_id = owner_id_from_cookies(context)
+        previous = load_previous_choices()
 
         time.sleep(2)
 
@@ -108,7 +140,14 @@ def scan_headful_direct():
                 for (const card of cards) {
                     const link = card.querySelector('a[role="link"], a[href*="facebook.com/"], a[href^="/"]');
                     if (!link) continue;
-                    const href = (link.href || '').split('?')[0].split('&')[0];
+                    // Keep ?id= for numeric profiles: stripping it would turn every
+                    // profile.php friend into the same (useless) URL.
+                    let href = '';
+                    try {
+                        const u = new URL(link.href);
+                        const pid = u.pathname === '/profile.php' ? u.searchParams.get('id') : '';
+                        href = pid ? `${u.origin}/profile.php?id=${pid}` : u.origin + u.pathname;
+                    } catch (e) { continue; }
                     if (!href || href.includes('/messages') || href.includes('/notifications') || href.includes('/saved')) continue;
                     const rawText = (card.innerText || link.innerText || '').trim();
                     if (!rawText) continue;
@@ -124,10 +163,7 @@ def scan_headful_direct():
                 return results;
             }""")
 
-            for it in discovered:
-                if not is_protected_owner(it["name"], it["url"]):
-                    if it["name"] not in friends_map:
-                        friends_map[it["name"]] = it
+            collect(friends_map, discovered, owner_id)
 
             c = len(friends_map)
             print(f" -> Discovered {c} friends (scroll {s + 1})")
@@ -170,10 +206,7 @@ def scan_headful_direct():
                 return results;
             }""")
 
-            for it in discovered:
-                if not is_protected_owner(it["name"], it["url"]):
-                    if it["name"] not in groups_map:
-                        groups_map[it["name"]] = it
+            collect(groups_map, discovered, owner_id)
 
             c = len(groups_map)
             print(f" -> Discovered {c} groups (scroll {s + 1})")
@@ -214,10 +247,7 @@ def scan_headful_direct():
                 return results;
             }""")
 
-            for it in discovered:
-                if not is_protected_owner(it["name"], it["url"]):
-                    if it["name"] not in pages_map:
-                        pages_map[it["name"]] = it
+            collect(pages_map, discovered, owner_id)
 
             c = len(pages_map)
             print(f" -> Discovered {c} pages (scroll {s + 1})")
@@ -230,6 +260,12 @@ def scan_headful_direct():
                 last_count = c
             page.mouse.wheel(0, random.randint(600, 1000))
             time.sleep(random.uniform(1.0, 1.5))
+
+        # Keep every KEEP/REMOVE choice from the previous scan.
+        for found in (friends_map, groups_map, pages_map):
+            for key, it in found.items():
+                if key in previous:
+                    it["selected"] = previous[key]
 
         out_data = {
             "friends": list(friends_map.values()),
